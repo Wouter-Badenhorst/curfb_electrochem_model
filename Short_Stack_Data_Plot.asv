@@ -1,0 +1,23 @@
+close all
+data = readtable('output.csv');
+figure(1)
+nexttile
+plot(data.Time,data.Voltage)
+title("Voltage")
+xlabel("Minutes (s)")
+ylabel("Voltage (V)")
+grid on
+
+
+nexttile
+title("c1c")
+plot(data.Time,data.c1c)
+nexttile
+title("c1c")
+plot(data.Time,data.c0c)
+nexttile
+plot(data.Time,data.c1a)
+nexttile
+plot(data.Time,data.c2a)
+
+clc
