@@ -1,7 +1,8 @@
-use std::io::Write;                                                                                                                                                                                                                                                                                                                           
-use std::fs::File; 
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::io::BufWriter;
 use std::error::Error;
+use std::io::Write;                                                                                                                                                                                                                                                                                                                           
+use std::fs::File; 
 use csv::Reader;
 
 const FARADAY_CONSTANT: f32 = 96485.0;
@@ -129,7 +130,7 @@ impl ElectrochemicalModel {
         // Stack resistance overpotentials
         let stack_overpotential = self.stack_resistance * self.current_i;
 
-        let mut voltage_offset = 0.0;
+        let voltage_offset:f32;
 
         if self.current_i > 0.0 {
             voltage_offset = self.charge_offset;
@@ -143,6 +144,8 @@ impl ElectrochemicalModel {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+
     let mut electrochem_model = ElectrochemicalModel {
         diffusion_number: 0.0000000000019031356, 
         rate_constant_positive: 0.000007846213,
@@ -213,8 +216,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         time_counter += 120.0; 
     }
 
-    println!("Time simulated, s: {}, m: {:.0}, h: {:.0}", time_counter, time_counter/60.0, time_counter/3600.0);
-
     let file = File::create("output.csv").expect("Unable to create file");
     let mut writer = BufWriter::new(&file);
 
@@ -224,6 +225,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if counter == 0 {
             writeln!(writer, "Time, Voltage, c1c, c0c, c1a, c2a").expect("Failed to write data");
         }
+
         writeln!(writer, "{}, {}, {}, {}, {}, {}", 
         time_data[counter], voltage_data[counter], 
         catholyte_c1_data[counter], catholyte_c0_data[counter], 
@@ -232,6 +234,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         
         counter += 1;
     }
+
+    let stop_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let duration = stop_time - start_time;
+
+    println!("Time simulated, s: {}, m: {:.0}, h: {:.0}", time_counter, time_counter/60.0, time_counter/3600.0);
+    println!("Total calculations time (s): {:?}", duration);
 
     Ok(())
 }
