@@ -1,246 +1,323 @@
+mod electrochem_model;
+
+
+use electrochem_model::electrochem_model_sim;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::io::BufWriter;
-use std::error::Error;
-use std::io::Write;                                                                                                                                                                                                                                                                                                                           
-use std::fs::File; 
-use csv::Reader;
+use serde_json::Value;
+use rand::Rng;
+use std::fs;
 
-const FARADAY_CONSTANT: f32 = 96485.0;
-const ELECTROLYTE_VOLUME: f32 = 3e-6; 
-const FORMAL_POTENTIAL: f32 = 0.65;
-const GAS_CONSTANT: f32 = 8.3145;
-const COPPER_UNITY: f32 = 1000.0;
-const TEMPERATURE: f32 = 333.15;
-const Z_ELECTRON: f32 = 1.0;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
-struct ElectrochemicalModel {
-    diffusion_number: f32,
-    rate_constant_positive: f32,
-    rate_constant_negative: f32,
+#[allow(dead_code)]
+struct Population {
+    best_fitness: f64,
+    worst_fitness: f64,
+    average_fitness: f64,
 
-    membrane_surface_area: f32,
-    membrane_thickness: f32,
-    stack_resistance: f32,
-    time_step: f32,
+    mutation_intensity: f64,
+    crossover_rate: f64,
+    mutation_rate: f64,
+    elite_size: f64,
 
-    anolyte_c1: f32,
-    anolyte_c2: f32,
+    individual_list: Vec<[f64; 10]>,
 
-    catholyte_c1: f32,
-    catholyte_c0: f32,
+    parameter_bounds_upper: [f64; 8],
+    parameter_bounds_lower: [f64; 8],
 
-    current_i: f32,
+    current_generation: u64,
+    maximum_generation: u64
 
-    voltage: f32,
-    cycle: f32,
-
-    charge_offset: f32,
-    discharge_offset:f32
 }
 
-impl ElectrochemicalModel {
-    fn time_step (&mut self) {
+#[allow(dead_code)]
+impl Population {
+    fn generate_pop(&mut self, pop_size: u64) {
+        // Assign unique identifier to each individual for later multithreadings
+        let mut identifier = 0.0;
 
-        self.charge_discharge_check(); 
-        self.current_component();
-        self.diffusion_step();
-        self.voltage_calc();
+        while self.individual_list.len() <= pop_size.try_into().unwrap() {
+            let mut individual = self.random_population();
+            individual[9] = identifier;
+            self.individual_list.push(individual);
+
+            identifier += 1.0;
+        }
     }
 
-    fn charge_discharge_check(&mut self) {
-        // Check whether timestep can be performed or current sign flip needed
-        if self.current_i > 0.0 {
-            if self.anolyte_c1 < 0.0 {
-                self.current_i = self.current_i * -1.0;
-                self.anolyte_c1 = 0.0;
-                self.cycle += 1.0
-            } else if self.catholyte_c1 < 0.0 {
-                self.current_i = self.current_i * -1.0;
-                self.catholyte_c1 = 0.0;
-                self.cycle += 1.0
+    fn random_population (&mut self) -> [f64; 10] {
+        // Create random first generation values
+        let mut rng = rand::thread_rng();
+        let mut individual = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+        let mut index = 0;
+
+        while index < individual.len() - 2 {
+            let new_gene = rng.gen_range(self.parameter_bounds_lower[index]..self.parameter_bounds_upper[index]);
+            individual[index] = new_gene;
+            index += 1;
+        }
+
+        individual
+    }
+
+    fn population_crossover (&mut self) {
+
+        // TODO: Makes less janky, less than intended amount of elites are created
+        // This is by elites being overwritten by better elites before the empty array is filled
+        // Additionally crossover rate is not properly implemented
+
+        // Find indexes of elite population limited by elite_size
+        let max_elites: f64 = self.individual_list.len() as f64 * self.elite_size;
+        let mut elite_count: f64 = 0.0;
+
+        let mut elites: Vec<[f64; 2]> = Vec::new();
+
+        while elite_count < max_elites {
+            elites.push([f64::INFINITY, f64::INFINITY]);
+            elite_count += 1.0;
+        }    
+
+        for index in 0..self.individual_list.len() {
+
+            for elite in elites.iter_mut() {
+
+                if self.individual_list[index][8] < elite[1]{
+                    
+                    elite [1] = self.individual_list[index][8];
+                    elite [0] = index as f64;
+
+                    break;
+                }
             }
-        } else {
-            if self.anolyte_c2 < 0.0 {
-                self.current_i = self.current_i * -1.0;
-                self.anolyte_c2 = 0.0;
-                self.cycle += 1.0
-            } else if self.catholyte_c0 < 0.0 {
-               self.current_i = self.current_i * -1.0; 
-               self.catholyte_c0 = 0.0;
-               self.cycle += 1.0
+
+            elites[1].sort_by(|a, b| a.partial_cmp(b).unwrap());
+        }
+
+        // Perform population crossover using the elites
+        let mut rng = rand::thread_rng();
+        let mut index_counter = 0;
+
+        // TODO: Fix this
+        // Duplicate elites to fill in void
+        let mut number_of_elites = 0;
+
+        for index in 0..elites.len() {
+
+            if elites[index][0] != f64::INFINITY {
+                number_of_elites += 1;
+            } else {
+                let random_index = rng.gen_range(0..number_of_elites);
+                elites[index][0] = elites[random_index][0];
+                elites[index][1] = elites[random_index][1];
             }
         }
 
-        // Negative concentration check
-        if self.anolyte_c1 < 0.0 {
-            self.anolyte_c1 = 0.0;
+        for elite in elites {
+            let random_index =rng.gen_range(0..self.individual_list.len());
+
+            for gene in self.individual_list[elite[0] as usize].clone().iter() {
+
+                let alpha_fitness = elite[1];
+
+                let beta_param = self.individual_list[random_index][index_counter].clone();
+                let beta_fitness = self.individual_list[random_index][8].clone();
+
+                let gene_mutated = ((gene * alpha_fitness)+(beta_param * beta_fitness)) / ( alpha_fitness + beta_fitness);
+
+                self.individual_list[random_index][index_counter] = gene_mutated;
+
+                index_counter += 1;
+
+                if index_counter == 7 {
+                    break;
+                }
+            }
+
+            index_counter = 0;
         }
-        if self.anolyte_c2 < 0.0 {
-            self.anolyte_c2 = 0.0;
-        }
-        if self.catholyte_c0 < 0.0 {
-            self.catholyte_c0 = 0.0;
-        }
-        if self.catholyte_c1 < 0.0 {
-            self.catholyte_c1 = 0.0;
-        }
+
+
+
     }
 
-    fn current_component(&mut self) {
-        let current_part = (1.0 / (Z_ELECTRON * FARADAY_CONSTANT) * self.current_i) * self.time_step / ELECTROLYTE_VOLUME;
+    fn mutate_population (&mut self) {
+        // Gene index counter
+        let mut rng = rand::thread_rng();
 
-        self.anolyte_c1 -= current_part;
-        self.anolyte_c2 += current_part;
+        for individual in self.individual_list.iter_mut() {
 
-        self.catholyte_c1 -= current_part;
-        self.catholyte_c0 += current_part;
-    }
+            for index in 0..7 {
+                // Checks whether to mutate
+                let mut noise = 0.0;
 
-    fn diffusion_step(&mut self) {
-        // C2 diffusion only occurs if there is C2 present in the anolyte, followed by comproportionation
-        if self.anolyte_c2 > 0.0 {
-            let diffusion_amount = self.diffusion_number * (self.membrane_surface_area / self.membrane_thickness) * self.time_step / ELECTROLYTE_VOLUME;
+                if rng.gen_range(0.0..1.0) < self.mutation_rate {
+                    noise = ((1.0 - (self.current_generation / self.maximum_generation) as f64)  * self.mutation_intensity) * (self.parameter_bounds_upper[index] - self.parameter_bounds_lower[index]);
+                } 
 
-            self.catholyte_c1 += 2.0 * diffusion_amount * self.anolyte_c2;
-            self.catholyte_c0 -= diffusion_amount * self.anolyte_c2;
-            self.anolyte_c2 -=  diffusion_amount * self.anolyte_c2;
+                if noise > 0.0 {
+
+                    let lower_gene = individual[index] - noise;
+                    let upper_gene = individual[index] + noise;
+
+                    if lower_gene >= upper_gene {
+                        break;
+                    } else if lower_gene.is_nan() || upper_gene.is_nan() {
+                        break;
+                    }
+
+                    let mut new_gene = randomize_gene(lower_gene, upper_gene);
+
+                    if new_gene < self.parameter_bounds_lower[index] {
+                        new_gene = self.parameter_bounds_lower[index];
+                    } else if new_gene > self.parameter_bounds_upper[index] {
+                        new_gene = self.parameter_bounds_upper[index];
+                    }
+                    
+                    individual[index] = new_gene;
+                } 
+            }
         }
+            
     }
 
-    fn voltage_calc(&mut self) {
-        // Butler-volmer overpotentials
-        // Exchange current densities from estimated rate constant
-        let jp: f32 = 1.0 / self.membrane_surface_area * (FARADAY_CONSTANT * self.rate_constant_positive * self.anolyte_c2.powf(0.5) * self.anolyte_c1.powf(0.5));
-        let jn: f32 = 1.0 / self.membrane_surface_area * (FARADAY_CONSTANT * self.rate_constant_negative * self.catholyte_c1.powf(0.5) * COPPER_UNITY.powf(0.5));
-        
-        // log term of Equation 9
-        let logterm_positive = 1.0 /(2.0 * jp * self.membrane_surface_area) * self.current_i + ((1.0 / (2.0 * jp * self.membrane_surface_area) * self.current_i).powf(2.0) + 1.0 ).powf(0.5);
-        // log term of Equation 10
-        let logterm_negative = 1.0 /(2.0 * jn * self.membrane_surface_area) * self.current_i + ((1.0 / (2.0 * jn * self.membrane_surface_area) * self.current_i).powf(2.0) + 1.0 ).powf(0.5);
+    fn best_fitness_calc (&mut self) {
+        let mut best_fitness = f64::INFINITY;
+        let mut best_individual = 0;
 
-        // Positive overpotential of Equation 9
-        let positive_overpotential = ((2.0 * GAS_CONSTANT * TEMPERATURE) / FARADAY_CONSTANT) * logterm_positive.ln();
-        // Negative overpotential of Equation 10
-        let negative_overpotential = ((2.0 * GAS_CONSTANT * TEMPERATURE) / FARADAY_CONSTANT) * logterm_negative.ln();
+        let mut index = 0;
 
-        let butler_volmer_overpotential = positive_overpotential - negative_overpotential;
+        for individual in self.individual_list.iter() {
 
-        let nernst_overpotential = (GAS_CONSTANT * TEMPERATURE) / (Z_ELECTRON * FARADAY_CONSTANT) * ((self.anolyte_c2 * COPPER_UNITY) / (self.anolyte_c1 * self.catholyte_c1)).ln();
+            if individual[8] < best_fitness {
+                best_fitness = individual[8];
+                best_individual = index;
+            }
 
-        // Stack resistance overpotentials
-        let stack_overpotential = self.stack_resistance * self.current_i;
-
-        let voltage_offset:f32;
-
-        if self.current_i > 0.0 {
-            voltage_offset = self.charge_offset;
-        } else {
-            voltage_offset = self.discharge_offset;
+            index += 1;
         }
 
-        // System potenial
-        self.voltage = butler_volmer_overpotential + nernst_overpotential + stack_overpotential + voltage_offset + FORMAL_POTENTIAL;
+        self.best_fitness = best_fitness;
+
+        println!("###################################################################################################");
+        println!("Generation: {:.0}, Fitness: {:.2}, C1a: {:.2}, C1c: {:.2}, R: {:.2}, k+ (e-1): {:.2}, k- (1e-5): {:.2}, Dmem (1e-12): {:.2}, Vc: {:.3}, Vd: {:.3}",
+        self.current_generation,
+        self.best_fitness / 10000.0,
+        self.individual_list[best_individual][0],
+        self.individual_list[best_individual][1],
+        self.individual_list[best_individual][2],
+        self.individual_list[best_individual][3] / 1e-1,
+        self.individual_list[best_individual][4] / 1e-5,
+        self.individual_list[best_individual][5] / 1e-12,
+        self.individual_list[best_individual][6],
+        self.individual_list[best_individual][7]);
+
     }
+
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+fn randomize_gene(lower: f64, upper: f64) -> f64 {
+    let mut rng = rand::thread_rng();
 
-    let mut electrochem_model = ElectrochemicalModel {
-        diffusion_number: 0.0000000000019031356, 
-        rate_constant_positive: 0.000007846213,
-        rate_constant_negative: 0.000007680297,
+    let new_gene = rng.gen_range(lower..upper);
 
-        membrane_surface_area: 1e-4,
-        membrane_thickness: 33e-6,
-        stack_resistance: 0.04841762,
-        time_step: 120.0,
+    new_gene
+}
 
-        anolyte_c1: 1077.5035,
-        anolyte_c2: 0.0,
-        
-        catholyte_c1: 1134.5563,
-        catholyte_c0: 0.0,
+fn main() {
 
-        current_i: 20e-3,
+    // Load setttings
+    let data = fs::read_to_string("population_specification.json").unwrap();
+    let settings: Value = serde_json::from_str(&data).unwrap();
 
-        voltage: 0.0,
-        cycle: 0.0,
+    // Load the population struct
+    let mut population = Population {
+        best_fitness: settings["best_fitness"].as_f64().unwrap(),
+        worst_fitness: settings["worst_fitness"].as_f64().unwrap(),
+        average_fitness: settings["average_fitness"].as_f64().unwrap(),
 
-        charge_offset: 0.13248,
-        discharge_offset: -0.1519
+        mutation_intensity: settings["mutation_intensity"].as_f64().unwrap(),
+        crossover_rate: settings["crossover_rate"].as_f64().unwrap(),
+        mutation_rate: settings["mutation_rate"].as_f64().unwrap(),
+        elite_size: settings["elite_size"].as_f64().unwrap(),
+
+        individual_list: Vec::new(),
+        parameter_bounds_upper: [0.0; 8],
+        parameter_bounds_lower: [0.0; 8],
+
+        maximum_generation: settings["max_generation"].as_u64().unwrap(),
+        current_generation: 0,
+
     };
 
-    // Arrays to capture data for plotting
-    let mut voltage_data = Vec::new();
-
-    let mut catholyte_c1_data = Vec::new();
-    let mut catholyte_c0_data = Vec::new();
-
-    let mut anolyte_c1_data = Vec::new();
-    let mut anolyte_c2_data = Vec::new();
-
-    let mut time_data = Vec::new();
-
-    let mut real_current: Vec<f32> = Vec::new();
-
-
-    // Import real data
-    let mut rdr = Reader::from_path("data.csv")?;
-
-    for result in rdr.records() {
-        let record = result?;
-        let record = &record[2];
-
-        real_current.push(record.parse::<f32>().unwrap())           
+    // TODO: Find a better solution
+    // Assign upper and lower bounds
+    let mut index = 0;
+    if let serde_json::Value::Array(bounds) = &settings["lower_bounds"] {
+        for bound in bounds {
+            population.parameter_bounds_lower[index] = bound.as_f64().unwrap();
+            index += 1;
+        }
+        index = 0;
+    }
+    if let serde_json::Value::Array(bounds) = &settings["upper_bounds"] {
+        for bound in bounds {
+            population.parameter_bounds_upper[index] = bound.as_f64().unwrap();
+            index += 1;
+        }
     }
 
-    // Tracking simulation time
-    let mut time_counter:f32 = 0.0;
+    // Generate population
+    population.generate_pop(settings["population_size"].as_u64().unwrap());
 
-    for current in real_current {
-        electrochem_model.current_i = current;
-        electrochem_model.time_step();
+    let max_gen = population.maximum_generation;
+    let mut cur_gen = population.current_generation;
 
-        if time_counter % 10.0 == 0.0 {
-            voltage_data.push(electrochem_model.voltage);
-            catholyte_c1_data.push(electrochem_model.catholyte_c1);
-            catholyte_c0_data.push(electrochem_model.catholyte_c0);
+    let shared_struct = Arc::new(Mutex::new(population));
 
-            anolyte_c1_data.push(electrochem_model.anolyte_c1);
-            anolyte_c2_data.push(electrochem_model.anolyte_c2);
+    let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
-            time_data.push(time_counter);
+    while cur_gen < max_gen {
+
+        // Calculate fitness using multithreading
+
+
+        let mut threads = vec![];
+
+        for i in 0..shared_struct.lock().unwrap().individual_list.len() {
+            let shared_struct = shared_struct.clone();
+            
+            let thread_handle = thread::spawn(move || {
+                let mut my_struct = shared_struct.lock().unwrap();
+
+                let fitness = electrochem_model_sim(false, my_struct.individual_list[i]);
+                my_struct.individual_list[i][8] = fitness;
+            });
+
+            threads.push(thread_handle);
         }
 
-        time_counter += 120.0; 
-    }
-
-    let file = File::create("output.csv").expect("Unable to create file");
-    let mut writer = BufWriter::new(&file);
-
-    let mut counter = 0;
-
-    while counter < voltage_data.len() {
-        if counter == 0 {
-            writeln!(writer, "Time, Voltage, c1c, c0c, c1a, c2a").expect("Failed to write data");
+        for thread_handle in threads {
+            thread_handle.join().unwrap();
         }
 
-        writeln!(writer, "{}, {}, {}, {}, {}, {}", 
-        time_data[counter], voltage_data[counter], 
-        catholyte_c1_data[counter], catholyte_c0_data[counter], 
-        anolyte_c1_data[counter], anolyte_c2_data[counter])
-        .expect("Failed to write data");
-        
-        counter += 1;
+        // Unlock the population from the Mutex
+        let mut population = shared_struct.lock().unwrap();
+
+        population.population_crossover();
+
+        population.mutate_population();
+
+        population.current_generation += 1;
+        cur_gen += 1;
+
+        population.best_fitness_calc();
+
     }
 
-    let stop_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    let duration = stop_time - start_time;
+    let end_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
-    println!("Time simulated, s: {}, m: {:.0}, h: {:.0}", time_counter, time_counter/60.0, time_counter/3600.0);
-    println!("Total calculations time (s): {:?}", duration);
-
-    Ok(())
+    println!("Total duration: {} s", (end_time - start_time));
+    
 }
-
