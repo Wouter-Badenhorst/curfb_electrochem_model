@@ -1,11 +1,15 @@
 mod electrochem_model;
 
-
 use electrochem_model::electrochem_model_sim;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use rand::Rng;
 use std::fs;
+
+use std::io::BufWriter;
+use std::io::Write;                                                                                                                                                                                                                                                                                                                           
+use std::fs::File; 
+use csv::Reader;
 
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -182,7 +186,7 @@ impl Population {
             
     }
 
-    fn best_fitness_calc (&mut self) {
+    fn best_fitness_calc (&mut self) -> usize {
         let mut best_fitness = f64::INFINITY;
         let mut best_individual = 0;
 
@@ -213,8 +217,8 @@ impl Population {
         self.individual_list[best_individual][6],
         self.individual_list[best_individual][7]);
 
+        best_individual
     }
-
 }
 
 fn randomize_gene(lower: f64, upper: f64) -> f64 {
@@ -278,6 +282,11 @@ fn main() {
 
     let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
+    // Grab the real current and voltage data, only single file read
+
+    let (real_current, real_voltage) = read_real_data();
+    let mut best_individual: usize = 0;
+
     while cur_gen < max_gen {
 
         // Calculate fitness using multithreading
@@ -287,11 +296,13 @@ fn main() {
 
         for i in 0..shared_struct.lock().unwrap().individual_list.len() {
             let shared_struct = shared_struct.clone();
+            let real_current_clone = real_current.clone();
+            let real_voltage_clone = real_voltage.clone();
             
             let thread_handle = thread::spawn(move || {
                 let mut my_struct = shared_struct.lock().unwrap();
 
-                let fitness = electrochem_model_sim(false, my_struct.individual_list[i]);
+                let fitness = electrochem_model_sim(false, my_struct.individual_list[i], real_current_clone, real_voltage_clone);
                 my_struct.individual_list[i][8] = fitness;
             });
 
@@ -312,12 +323,33 @@ fn main() {
         population.current_generation += 1;
         cur_gen += 1;
 
-        population.best_fitness_calc();
+        best_individual = population.best_fitness_calc();
+
+        let _fitness = electrochem_model_sim(true, population.individual_list[best_individual], real_current.clone(), real_voltage.clone());
 
     }
 
-    let end_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
+
+    let end_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     println!("Total duration: {} s", (end_time - start_time));
     
+}
+
+
+fn read_real_data() -> (Vec<f32>, Vec<f32>) {
+        // Import real data to use in the model
+        let mut real_current: Vec<f32> = Vec::new();
+        let mut real_voltage: Vec<f32> = Vec::new();
+    
+        let mut rdr = Reader::from_path("data.csv").unwrap();
+    
+        for result in rdr.records() {
+            let record = result.unwrap();
+    
+            real_current.push(record[2].parse::<f32>().unwrap());
+            real_voltage.push(record[1].parse::<f32>().unwrap());  
+        }
+
+        return (real_current, real_voltage)
 }

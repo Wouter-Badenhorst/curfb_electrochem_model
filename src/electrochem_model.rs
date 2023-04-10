@@ -137,7 +137,7 @@ impl ElectrochemicalModel {
     }
 }
 
-pub fn electrochem_model_sim(file_write: bool, individual: [f64; 10]) -> f64 {
+pub fn electrochem_model_sim(file_write: bool, individual: [f64; 10], real_current: Vec<f32>, real_voltage: Vec<f32>) -> f64 {
 
     let mut electrochem_model = ElectrochemicalModel {
         diffusion_number: individual[5] as f32, 
@@ -176,17 +176,17 @@ pub fn electrochem_model_sim(file_write: bool, individual: [f64; 10]) -> f64 {
     let mut time_data = Vec::new();
 
     // Import real data to use in the model
-    let mut real_current: Vec<f32> = Vec::new();
-    let mut real_voltage: Vec<f32> = Vec::new();
+    // let mut real_current: Vec<f32> = Vec::new();
+    // let mut real_voltage: Vec<f32> = Vec::new();
 
-    let mut rdr = Reader::from_path("data.csv").unwrap();
+    // let mut rdr = Reader::from_path("data.csv").unwrap();
 
-    for result in rdr.records() {
-        let record = result.unwrap();
+    // for result in rdr.records() {
+    //     let record = result.unwrap();
 
-        real_current.push(record[2].parse::<f32>().unwrap());
-        real_voltage.push(record[1].parse::<f32>().unwrap());  
-    }
+    //     real_current.push(record[2].parse::<f32>().unwrap());
+    //     real_voltage.push(record[1].parse::<f32>().unwrap());  
+    // }
 
     // Tracking simulation time
     let mut time_counter:f32 = 0.0;
