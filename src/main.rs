@@ -3,13 +3,9 @@ mod electrochem_model;
 use electrochem_model::electrochem_model_sim;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
+use csv::Reader;
 use rand::Rng;
 use std::fs;
-
-use std::io::BufWriter;
-use std::io::Write;                                                                                                                                                                                                                                                                                                                           
-use std::fs::File; 
-use csv::Reader;
 
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -58,7 +54,7 @@ impl Population {
         let mut index = 0;
 
         while index < individual.len() - 2 {
-            let new_gene = rng.gen_range(self.parameter_bounds_lower[index]..self.parameter_bounds_upper[index]);
+            let new_gene = rng.gen_range(self.parameter_bounds_lower[index] as f64..self.parameter_bounds_upper[index] as f64);
             individual[index] = new_gene;
             index += 1;
         }
@@ -283,15 +279,14 @@ fn main() {
     let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
     // Grab the real current and voltage data, only single file read
-
     let (real_current, real_voltage) = read_real_data();
-    let mut best_individual: usize = 0;
+    let mut best_individual: usize;
+
+    // Reduce the number of threads to reduce context switching
 
     while cur_gen < max_gen {
 
         // Calculate fitness using multithreading
-
-
         let mut threads = vec![];
 
         for i in 0..shared_struct.lock().unwrap().individual_list.len() {

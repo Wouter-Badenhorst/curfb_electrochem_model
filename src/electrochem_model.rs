@@ -1,7 +1,6 @@
 use std::io::BufWriter;
 use std::io::Write;                                                                                                                                                                                                                                                                                                                           
 use std::fs::File; 
-use csv::Reader;
 
 const FARADAY_CONSTANT: f32 = 96485.0;
 const ELECTROLYTE_VOLUME: f32 = 3e-6; 
@@ -11,6 +10,7 @@ const COPPER_UNITY: f32 = 1000.0;
 const TEMPERATURE: f32 = 333.15;
 const Z_ELECTRON: f32 = 1.0;
 
+#[allow(dead_code)]
 struct ElectrochemicalModel {
     diffusion_number: f32,
     rate_constant_positive: f32,
@@ -39,13 +39,13 @@ struct ElectrochemicalModel {
 impl ElectrochemicalModel {
     fn time_step (&mut self) {
 
-        self.charge_discharge_check(); 
+        // self.charge_discharge_check(); 
         self.current_component();
         self.diffusion_step();
         self.voltage_calc();
     }
 
-    fn charge_discharge_check(&mut self) {
+    fn _charge_discharge_check(&mut self) {
         // Check whether timestep can be performed or current sign flip needed
         if self.current_i > 0.0 {
             if self.anolyte_c1 < 0.0 {
@@ -174,19 +174,6 @@ pub fn electrochem_model_sim(file_write: bool, individual: [f64; 10], real_curre
     let mut anolyte_c2_data = Vec::new();
 
     let mut time_data = Vec::new();
-
-    // Import real data to use in the model
-    // let mut real_current: Vec<f32> = Vec::new();
-    // let mut real_voltage: Vec<f32> = Vec::new();
-
-    // let mut rdr = Reader::from_path("data.csv").unwrap();
-
-    // for result in rdr.records() {
-    //     let record = result.unwrap();
-
-    //     real_current.push(record[2].parse::<f32>().unwrap());
-    //     real_voltage.push(record[1].parse::<f32>().unwrap());  
-    // }
 
     // Tracking simulation time
     let mut time_counter:f32 = 0.0;
