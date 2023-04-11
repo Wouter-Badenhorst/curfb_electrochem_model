@@ -2,13 +2,14 @@ mod electrochem_model;
 
 use electrochem_model::electrochem_model_sim;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use rayon::prelude::*;
 use serde_json::Value;
 use csv::Reader;
 use rand::Rng;
 use std::fs;
 
-use std::sync::{Arc, Mutex};
-use std::thread;
+
 
 #[allow(dead_code)]
 struct Population {
@@ -117,6 +118,7 @@ impl Population {
         for elite in elites {
             let random_index =rng.gen_range(0..self.individual_list.len());
 
+
             for gene in self.individual_list[elite[0] as usize].clone().iter() {
 
                 let alpha_fitness = elite[1];
@@ -143,16 +145,15 @@ impl Population {
     }
 
     fn mutate_population (&mut self) {
-        // Gene index counter
-        let mut rng = rand::thread_rng();
+       
 
-        for individual in self.individual_list.iter_mut() {
+        self.individual_list.par_iter_mut().for_each(|individual| 
 
             for index in 0..7 {
                 // Checks whether to mutate
                 let mut noise = 0.0;
 
-                if rng.gen_range(0.0..1.0) < self.mutation_rate {
+                if random_helper() < self.mutation_rate {
                     noise = ((1.0 - (self.current_generation / self.maximum_generation) as f64)  * self.mutation_intensity) * (self.parameter_bounds_upper[index] - self.parameter_bounds_lower[index]);
                 } 
 
@@ -178,7 +179,7 @@ impl Population {
                     individual[index] = new_gene;
                 } 
             }
-        }
+        )
             
     }
 
@@ -223,6 +224,12 @@ fn randomize_gene(lower: f64, upper: f64) -> f64 {
     let new_gene = rng.gen_range(lower..upper);
 
     new_gene
+}
+
+fn random_helper() -> f64 {
+    let mut rng = rand::thread_rng();
+
+    rng.gen_range(0.0..1.0)
 }
 
 fn main() {
@@ -280,35 +287,16 @@ fn main() {
 
     // Grab the real current and voltage data, only single file read
     let (real_current, real_voltage) = read_real_data();
-    let mut best_individual: usize;
 
     // Reduce the number of threads to reduce context switching
 
     while cur_gen < max_gen {
 
-        // Calculate fitness using multithreading
-        let mut threads = vec![];
+        shared_struct.lock().unwrap().individual_list.par_iter_mut().for_each(|individual| 
+            individual[8] = electrochem_model_sim(false, *individual, real_current.clone(), real_voltage.clone())
 
-        for i in 0..shared_struct.lock().unwrap().individual_list.len() {
-            let shared_struct = shared_struct.clone();
-            let real_current_clone = real_current.clone();
-            let real_voltage_clone = real_voltage.clone();
-            
-            let thread_handle = thread::spawn(move || {
-                let mut my_struct = shared_struct.lock().unwrap();
+        );
 
-                let fitness = electrochem_model_sim(false, my_struct.individual_list[i], real_current_clone, real_voltage_clone);
-                my_struct.individual_list[i][8] = fitness;
-            });
-
-            threads.push(thread_handle);
-        }
-
-        for thread_handle in threads {
-            thread_handle.join().unwrap();
-        }
-
-        // Unlock the population from the Mutex
         let mut population = shared_struct.lock().unwrap();
 
         population.population_crossover();
@@ -318,13 +306,11 @@ fn main() {
         population.current_generation += 1;
         cur_gen += 1;
 
-        best_individual = population.best_fitness_calc();
+        let best_individual = population.best_fitness_calc();
 
         let _fitness = electrochem_model_sim(true, population.individual_list[best_individual], real_current.clone(), real_voltage.clone());
 
     }
-
-
 
     let end_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     println!("Total duration: {} s", (end_time - start_time));
