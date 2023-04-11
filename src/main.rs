@@ -288,8 +288,6 @@ fn main() {
     // Grab the real current and voltage data, only single file read
     let (real_current, real_voltage) = read_real_data();
 
-    // Reduce the number of threads to reduce context switching
-
     while cur_gen < max_gen {
 
         shared_struct.lock().unwrap().individual_list.par_iter_mut().for_each(|individual| 
