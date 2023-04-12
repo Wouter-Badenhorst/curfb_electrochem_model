@@ -65,10 +65,6 @@ impl Population {
 
     fn population_crossover (&mut self) {
 
-        // TODO: Makes less janky, less than intended amount of elites are created
-        // This is by elites being overwritten by better elites before the empty array is filled
-        // Additionally crossover rate is not properly implemented
-
         // Find indexes of elite population limited by elite_size
         let max_elites: f64 = self.individual_list.len() as f64 * self.elite_size;
         let mut elite_count: f64 = 0.0;
@@ -76,52 +72,42 @@ impl Population {
         let mut elites: Vec<[f64; 2]> = Vec::new();
 
         while elite_count < max_elites {
-            elites.push([f64::INFINITY, f64::INFINITY]);
+            elites.push([f64::INFINITY, 0.0]);
             elite_count += 1.0;
         }    
 
-        for index in 0..self.individual_list.len() {
+        while elites[0].contains(&f64::INFINITY) {
+            
+            for index in 0..self.individual_list.len() - 1 {
 
-            for elite in elites.iter_mut() {
-
-                if self.individual_list[index][8] < elite[1]{
-                    
-                    elite [1] = self.individual_list[index][8];
-                    elite [0] = index as f64;
-
-                    break;
+                // Sort elites to make sure only worst candidates get removed
+                elites.sort_by(|a, b| b.partial_cmp(a).unwrap());
+                // elites.reverse();
+    
+                for elite in elites.iter_mut() {
+    
+                    if self.individual_list[index][8] < elite[0]{
+                        
+                        elite [0] = self.individual_list[index][8];
+                        elite [1] = self.individual_list[index][9];
+    
+                        break;
+                    }
                 }
             }
-
-            elites[1].sort_by(|a, b| a.partial_cmp(b).unwrap());
-        }
+        }        
 
         // Perform population crossover using the elites
         let mut rng = rand::thread_rng();
         let mut index_counter = 0;
 
-        // TODO: Fix this
-        // Duplicate elites to fill in void
-        let mut number_of_elites = 0;
-
-        for index in 0..elites.len() {
-
-            if elites[index][0] != f64::INFINITY {
-                number_of_elites += 1;
-            } else {
-                let random_index = rng.gen_range(0..number_of_elites);
-                elites[index][0] = elites[random_index][0];
-                elites[index][1] = elites[random_index][1];
-            }
-        }
-
         for elite in elites {
-            let random_index =rng.gen_range(0..self.individual_list.len());
+            let random_index =rng.gen_range(0..self.individual_list.len() - 1);
 
 
-            for gene in self.individual_list[elite[0] as usize].clone().iter() {
+            for gene in self.individual_list[elite[1] as usize].clone().iter() {
 
-                let alpha_fitness = elite[1];
+                let alpha_fitness = elite[0];
 
                 let beta_param = self.individual_list[random_index][index_counter].clone();
                 let beta_fitness = self.individual_list[random_index][8].clone();
