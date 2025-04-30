@@ -7,6 +7,25 @@ edition = "2021"
 
 [dependencies]
 serde_json = "1.0.95"
-rayon = "1.7.0"
-rand = "0.8.5"
+plotters = "0.3.7"
+rayon = "1.5"
+rand = "0.8"
 csv = "1.1"
+chrono = "0.4.41"
+eframe = "0.24.1"
+egui = "0.24.1"
+egui_plot = "0.24.1"
+ecolor = "0.24.1"
+winapi = { version = "0.3.9", features = ["winuser"] }
+
+[profile.release]
+opt-level = 3               # Maximum optimization
+lto = true                  # Enable Link Time Optimization
+codegen-units = 1           # Reduce parallel code generation units to increase optimization
+panic = "abort"             # Remove panic unwinding to reduce binary size
+strip = true                # Strip symbols from binary
+debug = false               # Remove debug symbols
+
+[[bin]]
+name = "plot_viewer"
+path = "src/bin/plot_viewer.rs"

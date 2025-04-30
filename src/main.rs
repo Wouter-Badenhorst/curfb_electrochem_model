@@ -1,268 +1,90 @@
+mod data_preparation;
 mod electrochem_model;
+mod genetic_algorithm;
 
 use electrochem_model::electrochem_model_sim;
+use crate::data_preparation::process_data;
+use crate::genetic_algorithm::Population;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
-use serde_json::Value;
 use csv::Reader;
-use rand::Rng;
-use std::fs;
 
+fn read_real_data() -> (Vec<f32>, Vec<f32>) {
+    // Import real data to use in the model
+    let mut real_current: Vec<f32> = Vec::new();
+    let mut real_voltage: Vec<f32> = Vec::new();
 
+    let mut rdr = Reader::from_path("data.csv").unwrap();
 
-#[allow(dead_code)]
-struct Population {
-    best_fitness: f64,
-    worst_fitness: f64,
-    average_fitness: f64,
+    for result in rdr.records() {
+        let record = result.unwrap();
 
-    mutation_intensity: f64,
-    crossover_rate: f64,
-    mutation_rate: f64,
-    elite_size: f64,
-
-    individual_list: Vec<[f64; 10]>,
-
-    parameter_bounds_upper: [f64; 8],
-    parameter_bounds_lower: [f64; 8],
-
-    current_generation: u64,
-    maximum_generation: u64
-
-}
-
-#[allow(dead_code)]
-impl Population {
-    fn generate_pop(&mut self, pop_size: u64) {
-        // Assign unique identifier to each individual for later multithreadings
-        let mut identifier = 0.0;
-
-        while self.individual_list.len() <= pop_size.try_into().unwrap() {
-            let mut individual = self.random_population();
-            individual[9] = identifier;
-            self.individual_list.push(individual);
-
-            identifier += 1.0;
-        }
+        real_current.push(record[2].parse::<f32>().unwrap());
+        real_voltage.push(record[1].parse::<f32>().unwrap());  
     }
 
-    fn random_population (&mut self) -> [f64; 10] {
-        // Create random first generation values
-        let mut rng = rand::thread_rng();
-        let mut individual = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-
-        let mut index = 0;
-
-        while index < individual.len() - 2 {
-            let new_gene = rng.gen_range(self.parameter_bounds_lower[index] as f64..self.parameter_bounds_upper[index] as f64);
-            individual[index] = new_gene;
-            index += 1;
-        }
-
-        individual
-    }
-
-    fn population_crossover (&mut self) {
-
-        // Find indexes of elite population limited by elite_size
-        let max_elites: f64 = self.individual_list.len() as f64 * self.elite_size;
-        let mut elite_count: f64 = 0.0;
-
-        let mut elites: Vec<[f64; 2]> = Vec::new();
-
-        while elite_count < max_elites {
-            elites.push([f64::INFINITY, 0.0]);
-            elite_count += 1.0;
-        }    
-
-        while elites[0].contains(&f64::INFINITY) {
-            
-            for index in 0..self.individual_list.len() - 1 {
-
-                // Sort elites to make sure only worst candidates get removed
-                elites.sort_by(|a, b| b.partial_cmp(a).unwrap());
-                // elites.reverse();
-    
-                for elite in elites.iter_mut() {
-    
-                    if self.individual_list[index][8] < elite[0]{
-                        
-                        elite [0] = self.individual_list[index][8];
-                        elite [1] = self.individual_list[index][9];
-    
-                        break;
-                    }
-                }
-            }
-        }        
-
-        // Perform population crossover using the elites
-        let mut rng = rand::thread_rng();
-        let mut index_counter = 0;
-
-        for elite in elites {
-            let random_index =rng.gen_range(0..self.individual_list.len() - 1);
-
-
-            for gene in self.individual_list[elite[1] as usize].clone().iter() {
-
-                let alpha_fitness = elite[0];
-
-                let beta_param = self.individual_list[random_index][index_counter].clone();
-                let beta_fitness = self.individual_list[random_index][8].clone();
-
-                let gene_mutated = ((gene * alpha_fitness)+(beta_param * beta_fitness)) / ( alpha_fitness + beta_fitness);
-
-                self.individual_list[random_index][index_counter] = gene_mutated;
-
-                index_counter += 1;
-
-                if index_counter == 7 {
-                    break;
-                }
-            }
-
-            index_counter = 0;
-        }
-
-
-
-    }
-
-    fn mutate_population (&mut self) {
-       
-
-        self.individual_list.par_iter_mut().for_each(|individual| 
-
-            for index in 0..7 {
-                // Checks whether to mutate
-                let mut noise = 0.0;
-
-                if random_helper() < self.mutation_rate {
-                    noise = ((1.0 - (self.current_generation / self.maximum_generation) as f64)  * self.mutation_intensity) * (self.parameter_bounds_upper[index] - self.parameter_bounds_lower[index]);
-                } 
-
-                if noise > 0.0 {
-
-                    let lower_gene = individual[index] - noise;
-                    let upper_gene = individual[index] + noise;
-
-                    if lower_gene >= upper_gene {
-                        break;
-                    } else if lower_gene.is_nan() || upper_gene.is_nan() {
-                        break;
-                    }
-
-                    let mut new_gene = randomize_gene(lower_gene, upper_gene);
-
-                    if new_gene < self.parameter_bounds_lower[index] {
-                        new_gene = self.parameter_bounds_lower[index];
-                    } else if new_gene > self.parameter_bounds_upper[index] {
-                        new_gene = self.parameter_bounds_upper[index];
-                    }
-                    
-                    individual[index] = new_gene;
-                } 
-            }
-        )
-            
-    }
-
-    fn best_fitness_calc (&mut self) -> usize {
-        let mut best_fitness = f64::INFINITY;
-        let mut best_individual = 0;
-
-        let mut index = 0;
-
-        for individual in self.individual_list.iter() {
-
-            if individual[8] < best_fitness {
-                best_fitness = individual[8];
-                best_individual = index;
-            }
-
-            index += 1;
-        }
-
-        self.best_fitness = best_fitness;
-
-        println!("###################################################################################################");
-        println!("Generation: {:.0}, Fitness: {:.2}, C1a: {:.2}, C1c: {:.2}, R: {:.2}, k+ (e-1): {:.2}, k- (1e-5): {:.2}, Dmem (1e-12): {:.2}, Vc: {:.3}, Vd: {:.3}",
-        self.current_generation,
-        self.best_fitness / 10000.0,
-        self.individual_list[best_individual][0],
-        self.individual_list[best_individual][1],
-        self.individual_list[best_individual][2],
-        self.individual_list[best_individual][3] / 1e-1,
-        self.individual_list[best_individual][4] / 1e-5,
-        self.individual_list[best_individual][5] / 1e-12,
-        self.individual_list[best_individual][6],
-        self.individual_list[best_individual][7]);
-
-        best_individual
-    }
-}
-
-fn randomize_gene(lower: f64, upper: f64) -> f64 {
-    let mut rng = rand::thread_rng();
-
-    let new_gene = rng.gen_range(lower..upper);
-
-    new_gene
-}
-
-fn random_helper() -> f64 {
-    let mut rng = rand::thread_rng();
-
-    rng.gen_range(0.0..1.0)
+    return (real_current, real_voltage)
 }
 
 fn main() {
+    // Prepare data
+    let input_file = "input.csv";
+    let output_file = "data.csv";  // This will be used by the main program
 
-    // Load setttings
-    let data = fs::read_to_string("population_specification.json").unwrap();
-    let settings: Value = serde_json::from_str(&data).unwrap();
+    match process_data(input_file, output_file) {
+        Ok(_) => println!("Successfully processed {} into {}", input_file, output_file),
+        Err(e) => eprintln!("Error processing data: {}", e),
+    }
 
-    // Load the population struct
+    // Initialize population
     let mut population = Population {
-        best_fitness: settings["best_fitness"].as_f64().unwrap(),
-        worst_fitness: settings["worst_fitness"].as_f64().unwrap(),
-        average_fitness: settings["average_fitness"].as_f64().unwrap(),
+        // Fitness tracking variables
+        best_fitness: 0.0,          // Best fitness found so far
+        worst_fitness: 0.0,         // Worst fitness in current population
+        average_fitness: 0.0,       // Average fitness of current population
 
-        mutation_intensity: settings["mutation_intensity"].as_f64().unwrap(),
-        crossover_rate: settings["crossover_rate"].as_f64().unwrap(),
-        mutation_rate: settings["mutation_rate"].as_f64().unwrap(),
-        elite_size: settings["elite_size"].as_f64().unwrap(),
+        // Genetic algorithm parameters
+        mutation_intensity: 0.15,   // Reduced for finer local search
+        crossover_rate: 0.8,        // Increased for better gene mixing
+        mutation_rate: 0.3,         // Balanced for exploration/exploitation
+        elite_size: 0.05,           // Increased elite preservation
 
         individual_list: Vec::new(),
-        parameter_bounds_upper: [0.0; 8],
-        parameter_bounds_lower: [0.0; 8],
 
-        maximum_generation: settings["max_generation"].as_u64().unwrap(),
-        current_generation: 0,
+        // Model parameter bounds
+        parameter_bounds_upper: [
+            3000.0,         // [0] Anolyte concentration C1 (mol/m³)
+            3000.0,         // [1] Catholyte concentration C1 (mol/m³)
+            0.5,            // [2] Stack resistance (Ohm)
+            1.0e0,          // [3] Positive rate constant k+ (m/s)
+            1.0e0,          // [4] Negative rate constant k- (m/s)
+            1.0e-6,         // [5] Membrane diffusion coefficient (m²/s)
+            0.5,            // [6] Charge offset (V)
+            0.5,            // [7] Discharge offset (V)
+            1500.0,         // [8] Anolyte concentration C2 (mol/m³)
+            500.0,          // [9] Catholyte concentration C0 (mol/m³)
+        ],
+        parameter_bounds_lower: [
+            1000.0,         // [0] Anolyte concentration C1 (mol/m³)
+            1000.0,         // [1] Catholyte concentration C1 (mol/m³)
+            0.0,            // [2] Stack resistance (Ohm)
+            1.0e-8,         // [3] Positive rate constant k+ (m/s)
+            1.0e-8,         // [4] Negative rate constant k- (m/s)
+            1.0e-18,        // [5] Membrane diffusion coefficient (m²/s)
+            -0.5,           // [6] Charge offset (V)
+            -0.5,           // [7] Discharge offset (V)
+            0.0,            // [8] Anolyte concentration C2 (mol/m³)
+            0.0,            // [9] Catholyte concentration C0 (mol/m³)
+        ],
 
+        // Algorithm control
+        maximum_generation: 25,        // More generations for better convergence
+        current_generation: 0,          // Current generation counter
     };
 
-    // TODO: Find a better solution
-    // Assign upper and lower bounds
-    let mut index = 0;
-    if let serde_json::Value::Array(bounds) = &settings["lower_bounds"] {
-        for bound in bounds {
-            population.parameter_bounds_lower[index] = bound.as_f64().unwrap();
-            index += 1;
-        }
-        index = 0;
-    }
-    if let serde_json::Value::Array(bounds) = &settings["upper_bounds"] {
-        for bound in bounds {
-            population.parameter_bounds_upper[index] = bound.as_f64().unwrap();
-            index += 1;
-        }
-    }
-
-    // Generate population
-    population.generate_pop(settings["population_size"].as_u64().unwrap());
+    // Generate initial population
+    population.generate_pop(250000);    // Halved population size
 
     let max_gen = population.maximum_generation;
     let mut cur_gen = population.current_generation;
@@ -275,46 +97,42 @@ fn main() {
     let (real_current, real_voltage) = read_real_data();
 
     while cur_gen < max_gen {
-
-        shared_struct.lock().unwrap().individual_list.par_iter_mut().for_each(|individual| 
-            individual[8] = electrochem_model_sim(false, *individual, real_current.clone(), real_voltage.clone())
-
-        );
+        // Use larger chunks for better parallel performance
+        shared_struct.lock().unwrap().individual_list.par_chunks_mut(1000).for_each(|chunk| {
+            chunk.iter_mut().for_each(|individual| {
+                individual[10] = electrochem_model_sim(false, *individual, real_current.clone(), real_voltage.clone());
+            });
+        });
 
         let mut population = shared_struct.lock().unwrap();
 
+        // Preserve best solutions before modification
+        population.preserve_best_solutions();
         population.population_crossover();
-
         population.mutate_population();
-
+        
+        // Preserve best solutions after modification
+        population.preserve_best_solutions();
+        
         population.current_generation += 1;
         cur_gen += 1;
 
         let best_individual = population.best_fitness_calc();
-
-        let _fitness = electrochem_model_sim(true, population.individual_list[best_individual], real_current.clone(), real_voltage.clone());
-
+        let best_params = population.individual_list[best_individual];
+        
+        // Only write output in the final generation
+        if cur_gen == max_gen {
+            // Run simulation one final time with output writing enabled for plotting
+            electrochem_model_sim(
+                true,  // Enable file writing
+                best_params,
+                real_current.clone(),
+                real_voltage.clone()
+            );
+        }
+        drop(population);
     }
 
     let end_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     println!("Total duration: {} s", (end_time - start_time));
-    
-}
-
-
-fn read_real_data() -> (Vec<f32>, Vec<f32>) {
-        // Import real data to use in the model
-        let mut real_current: Vec<f32> = Vec::new();
-        let mut real_voltage: Vec<f32> = Vec::new();
-    
-        let mut rdr = Reader::from_path("data.csv").unwrap();
-    
-        for result in rdr.records() {
-            let record = result.unwrap();
-    
-            real_current.push(record[2].parse::<f32>().unwrap());
-            real_voltage.push(record[1].parse::<f32>().unwrap());  
-        }
-
-        return (real_current, real_voltage)
 }

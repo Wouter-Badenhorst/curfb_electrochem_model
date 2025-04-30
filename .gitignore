@@ -1,5 +1,2 @@
 /target
-data.csv
-output.csv
-newOGmem.csv
-output.csv
+*.csv
