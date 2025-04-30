@@ -16,3 +16,6 @@ Implemented new code to use multiple cells and account for the extra diffusion w
 Critically also implemented more dynamic C1 flow from high cocentration to low concentration
 
 Model does not account for flowrate and cell - tank concentration variations
+
+for plotting GUI
+cargo run --bin plot_viewer 
