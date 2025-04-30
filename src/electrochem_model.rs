@@ -169,7 +169,7 @@ pub fn electrochem_model_sim(file_write: bool, individual: [f64; 12], real_curre
         catholyte_c1: individual[1] as f32,
         catholyte_c0: individual[9] as f32,
 
-        current_i: 23.0,
+        current_i: 32.0,
 
         voltage: 0.0,
         cycle: 0.0,

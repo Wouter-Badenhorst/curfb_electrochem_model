@@ -45,10 +45,10 @@ fn main() {
         average_fitness: 0.0,       // Average fitness of current population
 
         // Genetic algorithm parameters
-        mutation_intensity: 0.15,   // Reduced for finer local search
-        crossover_rate: 0.8,        // Increased for better gene mixing
+        mutation_intensity: 0.3,   // Reduced for finer local search
+        crossover_rate: 0.7,        // Increased for better gene mixing
         mutation_rate: 0.3,         // Balanced for exploration/exploitation
-        elite_size: 0.05,           // Increased elite preservation
+        elite_size: 0.1,           // Increased elite preservation
 
         individual_list: Vec::new(),
 
@@ -59,11 +59,11 @@ fn main() {
             0.5,            // [2] Stack resistance (Ohm)
             1.0e0,          // [3] Positive rate constant k+ (m/s)
             1.0e0,          // [4] Negative rate constant k- (m/s)
-            1.0e-6,         // [5] Membrane diffusion coefficient (m²/s)
+            1.0e-10,        // [5] Membrane diffusion coefficient (m²/s)
             0.5,            // [6] Charge offset (V)
             0.5,            // [7] Discharge offset (V)
             1500.0,         // [8] Anolyte concentration C2 (mol/m³)
-            500.0,          // [9] Catholyte concentration C0 (mol/m³)
+            1500.0,         // [9] Catholyte concentration C0 (mol/m³)
         ],
         parameter_bounds_lower: [
             1000.0,         // [0] Anolyte concentration C1 (mol/m³)
@@ -71,7 +71,7 @@ fn main() {
             0.0,            // [2] Stack resistance (Ohm)
             1.0e-8,         // [3] Positive rate constant k+ (m/s)
             1.0e-8,         // [4] Negative rate constant k- (m/s)
-            1.0e-18,        // [5] Membrane diffusion coefficient (m²/s)
+            1.0e-14,        // [5] Membrane diffusion coefficient (m²/s)
             -0.5,           // [6] Charge offset (V)
             -0.5,           // [7] Discharge offset (V)
             0.0,            // [8] Anolyte concentration C2 (mol/m³)
@@ -79,12 +79,12 @@ fn main() {
         ],
 
         // Algorithm control
-        maximum_generation: 25,        // More generations for better convergence
+        maximum_generation: 50,         // More generations for better convergence
         current_generation: 0,          // Current generation counter
     };
 
     // Generate initial population
-    population.generate_pop(250000);    // Halved population size
+    population.generate_pop(500000);    // Population size
 
     let max_gen = population.maximum_generation;
     let mut cur_gen = population.current_generation;
@@ -130,6 +130,7 @@ fn main() {
                 real_voltage.clone()
             );
         }
+
         drop(population);
     }
 
