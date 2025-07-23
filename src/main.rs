@@ -62,8 +62,8 @@ fn main() {
             1.0e-10,        // [5] Membrane diffusion coefficient (m²/s)
             0.5,            // [6] Charge offset (V)
             0.5,            // [7] Discharge offset (V)
-            1500.0,         // [8] Anolyte concentration C2 (mol/m³)
-            1500.0,         // [9] Catholyte concentration C0 (mol/m³)
+            500.0,          // [8] Anolyte concentration C2 (mol/m³)
+            500.0,          // [9] Catholyte concentration C0 (mol/m³)
         ],
         parameter_bounds_lower: [
             1000.0,         // [0] Anolyte concentration C1 (mol/m³)
@@ -79,12 +79,12 @@ fn main() {
         ],
 
         // Algorithm control
-        maximum_generation: 50,         // More generations for better convergence
+        maximum_generation: 25,         // More generations for better convergence
         current_generation: 0,          // Current generation counter
     };
 
     // Generate initial population
-    population.generate_pop(500000);    // Population size
+    population.generate_pop(2500000);    // Population size
 
     let max_gen = population.maximum_generation;
     let mut cur_gen = population.current_generation;
