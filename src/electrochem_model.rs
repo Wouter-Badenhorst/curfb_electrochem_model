@@ -211,7 +211,7 @@ pub fn electrochem_model_sim(file_write: bool, individual: [f64; 12], real_curre
     let fitness = fitness_function(time_data.clone(), real_voltage.clone(), voltage_data.clone());
 
     if file_write {
-        write_output(time_data, voltage_data, catholyte_c1_data, catholyte_c0_data, anolyte_c1_data, anolyte_c2_data);
+        write_output(time_data, real_voltage,voltage_data, catholyte_c1_data, catholyte_c0_data, anolyte_c1_data, anolyte_c2_data);
     }
 
     fitness
@@ -232,7 +232,7 @@ fn fitness_function(time: Vec<f32>, real_voltage: Vec<f32>, simulated_voltage: V
     fitness
 }
 
-fn write_output(time_data: Vec<f32>, voltage_data: Vec<f32>, catholyte_c1_data: Vec<f32>, catholyte_c0_data: Vec<f32>, anolyte_c1_data: Vec<f32>, anolyte_c2_data: Vec<f32>) {
+fn write_output(time_data: Vec<f32>, real_voltage: Vec<f32>, voltage_data: Vec<f32>, catholyte_c1_data: Vec<f32>, catholyte_c0_data: Vec<f32>, anolyte_c1_data: Vec<f32>, anolyte_c2_data: Vec<f32>) {
     let file = File::create("output.csv").expect("Unable to create file");
     let mut writer = BufWriter::new(&file);
 
@@ -240,11 +240,11 @@ fn write_output(time_data: Vec<f32>, voltage_data: Vec<f32>, catholyte_c1_data: 
 
     while counter < voltage_data.len() {
         if counter == 0 {
-            writeln!(writer, "Time, Voltage, c1c, c0c, c1a, c2a").expect("Failed to write data");
+            writeln!(writer, "Time, Real Voltage, Simulated Voltage, c1c, c0c, c1a, c2a").expect("Failed to write data");
         }
 
-        writeln!(writer, "{}, {}, {}, {}, {}, {}", 
-        time_data[counter], voltage_data[counter], 
+        writeln!(writer, "{}, {}, {}, {}, {}, {}, {}", 
+        time_data[counter], real_voltage[counter], voltage_data[counter], 
         catholyte_c1_data[counter], catholyte_c0_data[counter], 
         anolyte_c1_data[counter], anolyte_c2_data[counter])
         .expect("Failed to write data");

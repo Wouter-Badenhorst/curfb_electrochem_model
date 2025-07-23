@@ -79,12 +79,12 @@ fn main() {
         ],
 
         // Algorithm control
-        maximum_generation: 25,         // More generations for better convergence
+        maximum_generation: 150,         // More generations for better convergence
         current_generation: 0,          // Current generation counter
     };
 
     // Generate initial population
-    population.generate_pop(2500000);    // Population size
+    population.generate_pop(500000);    // Population size
 
     let max_gen = population.maximum_generation;
     let mut cur_gen = population.current_generation;

@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "curfb_electrochem_model"
+version: "1.0.0"   # adjust to your current version
+authors:
+  - family-names: "Badenhorst"
+    given-names: "Wouter"
+    orcid: "https://orcid.org/0000-0003-4854-6865"  # add your ORCID if you have one
+date-released: 2025-07-23  # today's date or date of release
+url: "https://github.com/Wouter-Badenhorst/curfb_electrochem_model"
